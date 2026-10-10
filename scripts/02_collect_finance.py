@@ -105,8 +105,10 @@ def main() -> int:
     if before != len(merged):
         logger.info("去重：%d 行 → %d 行", before, len(merged))
 
-    # 落盘
-    storage.save_dataframe(merged, args.table)
+    # 落盘：用 upsert 而不是覆盖，避免"这次只采一个报告期"把别的报告期数据冲掉
+    merged = storage.upsert_dataframe(
+        merged, args.table, key_cols=["stock_code", "report_date"]
+    )
 
     # ---------- 结果概览（最便宜的质检手段）----------
     logger.info("=" * 64)
