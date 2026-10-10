@@ -1,5 +1,5 @@
 {
-  "trained_at": "2026-10-10T18:51:40",
+  "trained_at": "2026-10-10T18:56:04",
   "best_model": "随机森林",
   "target": "roe_w",
   "target_desc": "加权平均净资产收益率 ROE（%）",

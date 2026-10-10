@@ -229,6 +229,14 @@ def model_info() -> dict[str, Any]:
         "exclusion_reason": metadata.get("exclusion_reason"),
         "metrics": metadata.get("metrics"),
         "all_models_comparison": metadata.get("all_models"),
+        "known_limitations": [
+            "使用同期财务数据预测同期 ROE，存在内生性；"
+            "更严谨的做法是用 t-1 年数据预测 t 年",
+            "仅一年样本，无法做时间维度验证",
+            "加入行业特征已实验验证无效（R² 无提升）："
+            "行业间差异仅占 ROE 总方差的 7.8%，"
+            "92.2% 来自行业内公司差异",
+        ],
     }
 
 
