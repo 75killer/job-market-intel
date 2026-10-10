@@ -98,6 +98,28 @@ def _sqlite_type(dtype: Any) -> str:
     return "TEXT"
 
 
+# =========================================================
+# 布尔列的显式声明（读写时自动还原类型）
+#
+# 【踩坑记录】SQLite 没有原生 BOOLEAN 类型，布尔值会存成 0/1 整数。
+# 读回来时 pandas 得到的是 int64 而不是 bool，于是：
+#     df[df["is_analyzable"]]      # 期望按行筛选
+# 在 pandas 3.0 下会被解释成"选取名为 1/0 的列"，直接抛 KeyError：
+#     KeyError: "None of [Index([1, 1, 1, ...])] are in the [columns]"
+# 更隐蔽的是 bool.sum() 对整数列仍然正常，所以错误不会立刻暴露。
+#
+# 解决方案：在此集中声明布尔列，write_table 写入时转成 0/1，
+# read_table 读出后立刻还原成真正的 bool。
+# 这样上层代码永远拿到正确的类型，不需要每个脚本各自转换。
+# =========================================================
+BOOLEAN_COLUMNS: set[str] = {
+    "flag_loss", "flag_missing_key", "flag_negative_equity",
+    "is_a_share", "is_neeq", "is_st", "is_delisted",
+    "has_industry", "has_key_metrics", "is_analyzable", "is_model_ready",
+    "is_reliable",
+}
+
+
 def _connect() -> sqlite3.Connection:
     """创建数据库连接。
 
@@ -243,14 +265,28 @@ def save_dataframe(
 
 
 def read_table(name: str) -> pd.DataFrame:
-    """从 SQLite 读一张表回来。"""
+    """从 SQLite 读一张表回来。
+
+    读出后会把声明过的布尔列还原成真正的 bool 类型（见 BOOLEAN_COLUMNS 的说明）。
+    这样 `df[df["is_analyzable"]]` 这样的写法才能正常工作。
+    """
     if not config.DB_PATH.exists():
         raise FileNotFoundError(f"数据库不存在：{config.DB_PATH}，请先运行采集脚本")
     conn = _connect()
     try:
-        return pd.read_sql_query(f'SELECT * FROM "{name}"', conn)
+        df = pd.read_sql_query(f'SELECT * FROM "{name}"', conn)
     finally:
         conn.close()
+
+    # 还原布尔列类型
+    restored = []
+    for col in df.columns:
+        if col in BOOLEAN_COLUMNS:
+            df[col] = df[col].fillna(0).astype(bool)
+            restored.append(col)
+    if restored:
+        logger.debug("已还原布尔列类型：%s", ", ".join(restored))
+    return df
 
 
 def count_rows(name: str) -> int:
