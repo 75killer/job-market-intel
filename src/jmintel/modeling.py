@@ -1,6 +1,6 @@
 """机器学习建模：用财务指标预测公司盈利能力（ROE）。
 
-这个任务为什么值得做？（面试要能讲清"为什么做这个模型"）
+这个任务为什么值得做？
 —————————————————————————————————————————————
 业务问题：**一家公司的盈利能力，多大程度上能被它的财务结构解释？**
          如果模型能准确预测 ROE，说明我们找到了影响盈利的关键财务因子；
@@ -226,7 +226,7 @@ def train_and_compare(df: pd.DataFrame) -> tuple[list[ModelResult], pd.DataFrame
         raise RuntimeError(f"样本量不足（{len(X)} 条），无法建模")
 
     # 划分训练集/测试集：8:2
-    # random_state 固定，保证结果可复现（面试官问"你的结果能重现吗"，这是答案）
+    # random_state 固定，保证结果可复现
     X_train, X_test, y_train, y_test = train_test_split(
         X, y, test_size=0.2, random_state=42
     )
