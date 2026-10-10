@@ -128,7 +128,13 @@ def main() -> int:
             if c in merged.columns]
     top = merged.nlargest(5, "roe")[cols].copy()
     if "report_date" in top.columns:
-        top["report_date"] = top["report_date"].dt.strftime("%Y-%m-%d")
+        # 【踩坑记录】不能直接用 .dt.strftime()。
+        # 原因：upsert_dataframe 合并时会把主键列统一转成字符串以保证去重可靠，
+        # 所以第二次运行（数据已存在）时 report_date 已经是 str 而不是 datetime，
+        # 调用 .dt 访问器会抛 AttributeError: Can only use .dt accessor with
+        # datetimelike values。
+        # 这里统一用字符串截取，无论输入是 datetime 还是 str 都能正常工作。
+        top["report_date"] = top["report_date"].astype(str).str[:10]
     print(top.to_string(index=False))
 
     logger.info("-" * 64)
