@@ -28,9 +28,12 @@ data/processed/
 *.sqlite
 *.sqlite3
 
-# ---- 模型产物（体积大，可用脚本重新训练）----
+# ---- 模型产物 ----
+# 二进制模型文件体积大且可重新训练，不入库；
+# 但元信息 JSON 要入库——README 和面试稿里的指标都引用它，是可信度凭证。
 models/*.pkl
 models/*.joblib
+!models/model_metadata.json
 
 # ---- 编辑器与系统 ----
 .vscode/settings.json

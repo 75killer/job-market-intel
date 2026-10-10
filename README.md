@@ -146,50 +146,194 @@ job-market-intel/
 git clone https://github.com/<你的用户名>/job-market-intel.git
 cd job-market-intel
 
-# 创建虚拟环境
 python -m venv .venv
 # Windows
 .venv\Scripts\activate
 # macOS / Linux
 source .venv/bin/activate
 
-# 安装依赖
 pip install -r requirements.txt
+# 需要完全复现环境时用锁定版本：
+# pip install -r requirements.lock.txt
 ```
 
-### 3. 先做数据源健康巡检（推荐）
+### 3. 完整流程（按顺序执行）
 
 ```bash
+# ① 数据源健康巡检（推荐先跑，确认源可用再动手）
 python scripts/00_health_check.py
+
+# ② 采集财报数据（首次约 1 分钟，之后走本地缓存秒级完成）
+python scripts/02_collect_finance.py --report-date 2024-12-31 --report-date 2025-06-30
+
+# ③ 数据质量体检（确认分析口径）
+python scripts/03_data_quality_check.py
+
+# ④ 构建数仓分层：ods -> dwd -> ads
+python scripts/05_build_dwd_ads.py
+
+# ⑤ 执行 10 个业务分析 SQL，结果归档到 docs/analysis/
+python scripts/07_run_sql.py --report-date 2024-12-31
+
+# ⑥ 训练模型（对比 4 种算法）
+python scripts/08_train_model.py
+
+# ⑦ 生成模型图表与分析报告
+python scripts/09_model_report.py
 ```
 
-会输出各数据源的可用状态，并生成 `docs/notes/数据源巡检报告.md`。
-**先确认数据源活着，再跑采集**——这是我踩坑之后加上的习惯。
-
-### 4. 采集数据
+### 4. 启动服务与看板
 
 ```bash
-# 小规模验证（只抓 1 页，约 500 条）
-python scripts/02_collect_finance.py --report-date 2024-12-31 --max-pages 1
+# FastAPI 模型服务（交互式文档 http://127.0.0.1:8000/docs）
+uvicorn api.main:app --reload --port 8000
 
-# 全量采集（2024 年报 + 2025 半年报，约 1000+ 条）
-python scripts/02_collect_finance.py
-
-# 忽略缓存强制重新采集
-python scripts/02_collect_finance.py --no-cache
+# Streamlit 交互看板（http://127.0.0.1:8501）
+streamlit run dashboard/app.py
 ```
 
-采集完成后，数据会同时写入：
-- `data/processed/ods_finance_performance.csv`（可直接用 Excel 打开）
-- `data/jmintel.db`（SQLite，表名 `ods_finance_performance`）
-
-### 5. 用 SQL 检查数据
+### 5. 直接用 SQL 检查数据
 
 ```bash
-sqlite3 data/jmintel.db "SELECT industry, COUNT(*) AS 公司数, ROUND(AVG(roe),2) AS 平均ROE FROM ods_finance_performance GROUP BY industry ORDER BY 平均ROE DESC LIMIT 10;"
+sqlite3 data/jmintel.db "SELECT industry, COUNT(*) AS 公司数, ROUND(AVG(roe),2) AS 平均ROE FROM dwd_finance_performance WHERE is_analyzable=1 AND report_date='2024-12-31' GROUP BY industry ORDER BY 平均ROE DESC LIMIT 10;"
 ```
 
 ---
+
+## 🤖 机器学习建模
+
+**任务**：用财务指标预测上市公司 ROE（加权平均净资产收益率）
+
+```bash
+python scripts/08_train_model.py    # 训练与对比
+python scripts/09_model_report.py   # 生成图表与分析报告
+```
+
+### 模型对比结果（5 折交叉验证）
+
+| 模型 | 测试集 R² | 交叉验证 R² 均值 | 交叉验证标准差 | 判断 |
+|---|---|---|---|---|
+| **随机森林** | 0.6069 | **0.5412** | 0.0687 | ✅ 表现良好且稳定 |
+| 梯度提升 | 0.6282 | 0.5355 | 0.0688 | ✅ 表现良好且稳定 |
+| 基线（预测均值） | -0.0025 | -0.0010 | 0.0008 | 对照基准，预期为 0 |
+| Ridge 回归 | 0.1944 | **-1.6078** | 3.5741 | ❌ 极不稳定，不可用 |
+
+![模型对比](docs/figures/02_模型对比.png)
+
+### 关键决策一：主动排除数据泄漏特征
+
+用财务指标预测 ROE 时，最容易犯的错误是把 ROE 的组成部分当特征：
+
+| 被排除的字段 | 原因 |
+|---|---|
+| `eps` | 每股收益，与 ROE 分子同源 |
+| `bps` | 每股净资产，与 ROE 分母同源 |
+| `net_profit` | 就是 ROE 的分子 |
+| `net_margin` | = 净利润/营收，与 ROE 强相关 |
+| `ocf_to_eps` | 分母含 eps，间接泄漏 |
+
+放进去 R² 能轻松到 0.9 以上，但那不是预测，是**用另一种方式计算 ROE**。
+代码中实现了**运行时防御**（`modeling.LEAKY_COLUMNS`），误加泄漏特征会直接抛异常。
+
+### 关键决策二：用逐折诊断定位线性模型失效根因
+
+Ridge 回归交叉验证 R² 为负、标准差超过 3。逐折诊断结果：
+
+| 折 | 测试集 R² | 预测值范围 | 真实值范围 |
+|---|---|---|---|
+| 1 | 0.1944 | [-22, 59] | [-100, 60] |
+| 2 | **-8.1113** | **[-1640, 58]** | [-100, 185] |
+| 3 | 0.2027 | [-179, 65] | [-100, 63] |
+| 4 | 0.1409 | [-16, 77] | [-100, 140] |
+| 5 | 0.1707 | [-21, 74] | [-100, 200] |
+
+- **不是过拟合**：单次划分下训练集 R²=0.1948、测试集 R²=0.1944，几乎相同 → **欠拟合**
+- **是线性外推失控**：第 2 折预测出 `ROE = -1640%` 这种不可能的值，一个样本就把整折 R² 打成负数
+- **树模型没有这个问题**：决策树的预测值只能是训练样本目标值的加权平均，**结构上不可能外推**
+
+### 关键决策三：用排序能力论证模型价值
+
+![预测vs真实](docs/figures/04_预测vs真实.png)
+
+模型的价值不在于精确定价，而在于**排序筛选**。按预测值分 5 档：
+
+| 预测档位 | 样本数 | 预测 ROE 均值 | **真实 ROE 中位数** |
+|---|---|---|---|
+| 最低 20% | 218 | -16.40 | **-10.14** |
+| 较低 20% | 217 | 3.12 | 2.15 |
+| 中间 20% | 217 | 6.12 | 5.66 |
+| 较高 20% | 217 | 8.78 | 8.61 |
+| 最高 20% | 217 | 13.56 | **11.67** |
+
+**严格单调递增**，最低档与最高档相差 **21.8 个百分点** —— 足以支撑初筛场景。
+
+### 特征重要性
+
+![特征重要性](docs/figures/03_特征重要性.png)
+
+---
+
+## 🔌 API 接口
+
+启动后访问 **http://127.0.0.1:8000/docs** 查看自动生成的交互式文档。
+
+| 方法 | 路径 | 说明 |
+|---|---|---|
+| GET | `/health` | 健康检查（含模型加载状态、运行时长、数据库表） |
+| GET | `/model/info` | 模型元信息（指标、特征列表、排除的泄漏特征） |
+| POST | `/predict` | 单公司 ROE 预测 |
+| POST | `/predict/batch` | 批量预测（最多 500 家，按预测值降序返回） |
+| GET | `/industry/ranking` | 行业 ROE 排名（来自 ads 层聚合） |
+| GET | `/company/{code}` | 按股票代码查询历史数据 |
+
+```bash
+curl -X POST http://127.0.0.1:8000/predict \
+  -H "Content-Type: application/json" \
+  -d '{"log_revenue":1.85,"revenue_yoy_w":12.5,"profit_yoy_w":8.3,
+       "gross_margin_w":32.4,"expense_ratio":22.1,
+       "dividend_yield_w":2.5,"ocf_per_share":1.2}'
+# => {"predicted_roe":13.6,"quality_tier":"良好", ...}
+```
+
+---
+
+## 📊 Streamlit 交互看板
+
+```bash
+streamlit run dashboard/app.py   # http://127.0.0.1:8501
+```
+
+包含 5 个主题页：
+
+| 页面 | 内容 |
+|---|---|
+| 📈 全市场概览 | 关键指标卡、ROE 分布直方图、质量分档饼图、规模效应双轴图 |
+| 🏭 行业分析 | ROE 排名条形图（可调样本量门槛）、盈利能力×成长性四象限散点图 |
+| 🔍 公司筛选 | 按 ROE/增速/行业多维筛选，单公司详情与历史趋势 |
+| 💰 股息分析 | 股息率分档与 ROE、成长性的关系验证 |
+| 🤖 模型表现 | 模型对比、特征重要性、排序能力验证、已知局限说明 |
+
+---
+
+## 📈 当前进度
+
+| 阶段 | 状态 | 说明 |
+|---|---|---|
+| W1 环境 + 采集跑通 | ✅ 完成 | 项目骨架、HTTP 层、缓存层、存储层、数据源适配器 |
+| W1 数据源健康巡检 | ✅ 完成 | 采集前先确认源可用 |
+| W1 数据采集 | ✅ 完成 | 2 个报告期，23,246 条真实记录 |
+| W1 数据质量体检 | ✅ 完成 | 发现新三板占 47.5% 必须剔除 |
+| W2 数仓分层 | ✅ 完成 | dwd 明细层（49 列）+ 4 张 ads 聚合表 |
+| W3 SQL 业务分析 | ✅ 完成 | 10 个分析场景，475 行 SQL，结果自动归档 |
+| W4-W5 特征工程 + 建模 | ✅ 完成 | 4 模型对比、逐折诊断、排序能力检验 |
+| W5 可视化 | ✅ 完成 | 4 张分析图表 |
+| W6 FastAPI 服务 | ✅ 完成 | 6 个接口 + Swagger 文档，已实测全部通过 |
+| W7 Streamlit 看板 | ✅ 完成 | 5 个主题页，已实测服务正常 |
+| W8 文档 + 简历 + 面试稿 | ✅ 完成 | README、业务结论、模型分析报告、简历条目、面试问答 |
+| W8 单元测试 / Docker | ⬜ 待做 | pytest 单测、Dockerfile 容器化 |
+
+---
+
 
 ## 📊 工程要点（面试可讲的亮点）
 

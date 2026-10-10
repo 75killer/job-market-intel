@@ -1,0 +1,92 @@
+{
+  "trained_at": "2026-10-10T18:46:43",
+  "best_model": "随机森林",
+  "target": "roe_w",
+  "target_desc": "加权平均净资产收益率 ROE（%）",
+  "features": [
+    "log_revenue",
+    "revenue_yoy_w",
+    "profit_yoy_w",
+    "gross_margin_w",
+    "expense_ratio",
+    "dividend_yield_w",
+    "ocf_per_share"
+  ],
+  "excluded_leaky_features": [
+    "bps",
+    "eps",
+    "flag_loss",
+    "flag_negative_equity",
+    "log_abs_profit",
+    "net_margin",
+    "net_margin_w",
+    "net_profit",
+    "net_profit_yi",
+    "ocf_to_eps",
+    "roe",
+    "roe_tier",
+    "roe_w"
+  ],
+  "exclusion_reason": "这些字段与目标 ROE 存在直接数学关系，纳入会造成数据泄漏和虚高指标",
+  "report_period": "2024-12-31（年报口径）",
+  "metrics": {
+    "test_r2": 0.6069,
+    "cv_r2_mean": 0.5412,
+    "cv_r2_std": 0.0687,
+    "rmse": 9.83,
+    "mae": 5.45,
+    "n_train": 4341,
+    "n_test": 1086
+  },
+  "all_models": [
+    {
+      "模型": "随机森林",
+      "测试集R2": 0.6069,
+      "交叉验证R2均值": 0.5412,
+      "交叉验证R2标准差": 0.0687,
+      "RMSE": 9.83,
+      "MAE": 5.45,
+      "训练样本": 4341,
+      "测试样本": 1086
+    },
+    {
+      "模型": "梯度提升",
+      "测试集R2": 0.6282,
+      "交叉验证R2均值": 0.5355,
+      "交叉验证R2标准差": 0.0688,
+      "RMSE": 9.56,
+      "MAE": 5.13,
+      "训练样本": 4341,
+      "测试样本": 1086
+    },
+    {
+      "模型": "基线(预测均值)",
+      "测试集R2": -0.0025,
+      "交叉验证R2均值": -0.001,
+      "交叉验证R2标准差": 0.0008,
+      "RMSE": 15.71,
+      "MAE": 9.18,
+      "训练样本": 4341,
+      "测试样本": 1086
+    },
+    {
+      "模型": "Ridge回归",
+      "测试集R2": 0.1944,
+      "交叉验证R2均值": -1.6078,
+      "交叉验证R2标准差": 3.5741,
+      "RMSE": 14.08,
+      "MAE": 8.29,
+      "训练样本": 4341,
+      "测试样本": 1086
+    }
+  ],
+  "feature_importance": {
+    "expense_ratio": 0.3063,
+    "profit_yoy_w": 0.2513,
+    "gross_margin_w": 0.2349,
+    "ocf_per_share": 0.124,
+    "revenue_yoy_w": 0.045,
+    "log_revenue": 0.0312,
+    "dividend_yield_w": 0.0073
+  }
+}
