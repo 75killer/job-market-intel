@@ -30,3 +30,4 @@ streamlit>=1.33
 
 # ---- 开发工具 ----
 pytest>=8.0
+tabulate>=0.9      # pandas.to_markdown 依赖它把分析结果输出成 Markdown 表格
