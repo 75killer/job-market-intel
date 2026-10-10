@@ -1,0 +1,44 @@
+# ==========================================================
+# Python 项目标准 .gitignore
+# 作用：告诉 Git“这些文件不要上传到 GitHub”。
+# 为什么重要：data/ 里的原始数据、.venv/ 里的几千个依赖文件
+# 如果传上去，仓库会变得又大又乱——这是新手最常见的扣分项。
+# ==========================================================
+
+# ---- 虚拟环境（每个人在自己电脑上重建，绝不入库）----
+.venv/
+venv/
+env/
+
+# ---- Python 运行时垃圾 ----
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+.ipynb_checkpoints/
+
+# ---- 数据文件：原始数据和数据库不入库 ----
+# 原因：数据可通过 scripts/ 重新采集（这就是“可复现”），
+# 而且大文件会让 clone 变得很慢。
+# 注意：docs/figures/ 里的图片、data/samples/ 里的小样本例外，要入库。
+data/raw/
+data/interim/
+data/processed/
+*.db
+*.sqlite
+*.sqlite3
+
+# ---- 模型产物（体积大，可用脚本重新训练）----
+models/*.pkl
+models/*.joblib
+
+# ---- 编辑器与系统 ----
+.vscode/settings.json
+.idea/
+.DS_Store
+Thumbs.db
+
+# ---- 密钥、日志 ----
+.env
+*.log
+logs/
